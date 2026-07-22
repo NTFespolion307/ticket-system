@@ -1,0 +1,10 @@
+# Secrets -- never commit the API key.
+.env
+
+# SQLite database and its write-ahead-log siblings.
+tickets.db
+tickets.db-wal
+tickets.db-shm
+
+# Local database backups.
+backup/
