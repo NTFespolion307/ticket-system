@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<!--
+  IT Ticket Management System - the entire frontend lives in this one file
+  (markup + styles + logic). Served by server.js at http://localhost:3000
+  All data operations go through fetch() calls to /api/*  - no page reloads.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IT Ticket System</title>
+<style>
+/* ===== Theme tokens ==================================================== */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --border: #e2e6ed;
+  --text: #1d2433;
+  --muted: #6b7688;
+  --accent: #2f6fed;
+  --accent-dark: #2559c9;
+  --danger: #d4342c;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .05);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ===== Layout ========================================================== */
+header {
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header h1 {
+  font-size: 17px;
+  margin: 0;
+  padding: 16px 0;
+  letter-spacing: -.2px;
+}
+header h1 span { color: var(--accent); }
+
+nav { display: flex; gap: 4px; }
+nav button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 18px 14px 15px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+}
+nav button:hover { color: var(--text); }
+nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Roomy enough for the per-row status actions to sit beside the data. */
+main { max-width: 1340px; margin: 26px auto; padding: 0 26px 60px; }
+.view[hidden] { display: none; }
+
+.grid { display: grid; grid-template-columns: 360px 1fr; gap: 22px; align-items: start; }
+@media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+
+/* ===== Cards =========================================================== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card > h2 {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfe;
+}
+.card-body { padding: 18px; }
+
+/* ===== Forms =========================================================== */
+label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+label .req { color: var(--danger); }
+
+input, select, textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, .12);
+}
+input.invalid, select.invalid, textarea.invalid { border-color: var(--danger); }
+textarea { resize: vertical; min-height: 70px; }
+.field { margin-bottom: 13px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Input paired with a small button (the client picker + "New" shortcut). */
+.picker { display: flex; gap: 6px; }
+.picker input { flex: 1; min-width: 0; }
+.picker button { padding: 8px 12px; white-space: nowrap; }
+
+button.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 9px 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.btn:hover { background: var(--accent-dark); }
+button.btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+button.btn.ghost:hover { background: #f2f4f8; }
+
+/* ===== Tables ========================================================== */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  background: #fbfcfe;
+  white-space: nowrap;
+}
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text); }
+th .arrow { opacity: .45; font-size: 10px; }
+tbody tr:last-child td { border-bottom: none; }
+/* Names and dates read badly broken across lines; let the title column wrap. */
+td.nowrap { white-space: nowrap; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: #f6f9ff; }
+.empty { padding: 34px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* Per-row actions, pinned to the right edge of the tickets table. */
+.row-actions { text-align: right; white-space: nowrap; width: 1%; }
+button.mini {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 11px;
+  margin-left: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+button.mini:hover { background: #f2f4f8; color: var(--text); border-color: #c9d0db; }
+/* Greyed out when the ticket is already in that status. */
+button.mini:disabled { opacity: .4; cursor: default; }
+button.mini:disabled:hover { background: #fff; color: var(--muted); border-color: var(--border); }
+
+/* Quick status actions, tinted to match the badge they set. */
+button.mini.act-progress { color: #8a6100; background: #fffaeb; border-color: #f0dca6; }
+button.mini.act-progress:hover:enabled { background: #fdf3d4; color: #6d4c00; }
+/* Neutral grey, not the app's blue-tinted slate -- resolve should read grey. */
+button.mini.act-resolve { color: #5b5f66; background: #f4f5f6; border-color: #d8dade; }
+button.mini.act-resolve:hover:enabled { background: #e9eaec; color: #40444a; }
+
+/* ===== Badges ========================================================== */
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+/* Class names are slugified ("In Progress" -> "in-progress") because a class
+   attribute containing a space would be read as two separate classes. */
+/* Priority */
+.p-low      { background: #e3f7e8; color: #1c7a3a; }
+.p-medium   { background: #fdf3d4; color: #8a6100; }
+.p-high     { background: #ffe9d6; color: #a54b00; }
+.p-critical { background: #fde3e1; color: #b31c14; }
+/* Status -- Resolved is the terminal state now that tickets are resolved
+   rather than closed, so it takes the neutral grey. */
+.s-open        { background: #e0ecff; color: #1c4fb3; }
+.s-in-progress { background: #fdf3d4; color: #8a6100; }
+.s-resolved    { background: #ebecee; color: #5b5f66; }
+.s-closed      { background: #e0e2e5; color: #4a4e55; }
+
+/* ===== Toolbar ========================================================= */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+.toolbar input, .toolbar select { width: auto; min-width: 150px; }
+.toolbar .spacer { margin-left: auto; }
+.count { font-size: 13px; color: var(--muted); }
+
+/* ===== Suggested fixes panel (ticket creation) ========================= */
+.suggest {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 12px 14px;
+  margin-bottom: 13px;
+  font-size: 14px;
+}
+.suggest[hidden] { display: none; }
+.suggest-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin-bottom: 8px;
+}
+.suggest-head > span:first-child { white-space: nowrap; }
+/* Where the advice came from: our own tickets vs the model's general knowledge. */
+.src {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+  padding: 2px 7px; border-radius: 999px; text-transform: none;
+}
+.src-history { background: #e0ecff; color: #1c4fb3; }
+.src-general { background: #f3ecff; color: #6032b8; }
+.src-none    { background: #eceef2; color: #5c6675; }
+.suggest ul { margin: 0; padding: 0; list-style: none; }
+.suggest li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+.suggest .fix { flex: 1; }
+.suggest .count {
+  font-size: 11.5px; color: var(--muted); white-space: nowrap;
+}
+.suggest .conf {
+  font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+}
+.conf-high   { background: #e3f7e8; color: #1c7a3a; }
+.conf-medium { background: #fdf3d4; color: #8a6100; }
+.conf-low    { background: #eceef2; color: #5c6675; }
+.suggest .warn {
+  margin-top: 8px; padding: 7px 9px; border-radius: 6px;
+  background: #fff6e5; color: #8a5200; font-size: 13px;
+}
+.suggest .notes { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.suggest .spinner { font-size: 12.5px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* ===== Diagnostic steps log =========================================== */
+.steps-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fbfcfe;
+}
+.steps-list { margin: 0 0 10px; padding: 0; list-style: none; max-height: 210px; overflow-y: auto; }
+.steps-list li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.steps-list li:last-child { border-bottom: none; }
+.steps-list .when { font-size: 11.5px; color: var(--muted); display: block; }
+.steps-list .what { white-space: pre-wrap; }
+.steps-empty { color: var(--muted); font-size: 13.5px; padding: 4px 0 10px; }
+.step-add { display: flex; gap: 8px; }
+.step-add input { flex: 1; }
+
+/* ===== Modal =========================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 25, 38, .5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow-y: auto;
+  z-index: 50;
+}
+.modal-backdrop[hidden] { display: none; }
+/* Resolve is opened *on top of* the ticket it belongs to, so it has to stack
+   above the other modals rather than behind them. */
+#resolve-modal { z-index: 60; }
+.modal {
+  background: var(--surface);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: 0 20px 50px rgba(16, 24, 40, .25);
+}
+.modal.narrow { max-width: 440px; }
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-head h2 { margin: 0; font-size: 16px; flex: 1; }
+.modal-head .close {
+  background: none; border: none; font-size: 22px; line-height: 1;
+  color: var(--muted); cursor: pointer; padding: 0 4px;
+}
+.modal-body { padding: 20px; }
+.modal-foot {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding: 14px 20px; border-top: 1px solid var(--border); background: #fbfcfe;
+  border-radius: 0 0 12px 12px;
+}
+.meta { font-size: 12.5px; color: var(--muted); margin-top: 14px; }
+
+/* ===== Errors & toast ================================================== */
+.errors {
+  background: #fdecea;
+  border: 1px solid #f5c6c2;
+  color: #922019;
+  border-radius: 7px;
+  padding: 10px 13px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+}
+.errors[hidden] { display: none; }
+.errors ul { margin: 0; padding-left: 18px; }
+
+/* ===== Printable ticket sheet ==========================================
+   Hidden on screen; @media print swaps the page for it. "Save as PDF" in
+   the browser's print dialog turns it into a PDF -- no PDF library needed.
+
+   Deliberately DENSE: the whole work order lives in the top ~80mm of the
+   page, so a sheet can be guillotined in half (or printed 2-up) instead of
+   spending a full page per ticket. Everything is tight "Label: value" lines
+   in two columns -- no section header bars, no per-row rules, no filled
+   areas. Two hairlines in the entire layout. */
+#print-sheet {
+  display: none;
+  color: #000;
+  font-size: 8.5pt;
+  line-height: 1.32;
+  /* A framed half-page card: every ticket comes out the same size, and the
+     frame itself is the line to guillotine along. Half of A4 is 148mm, so
+     128mm plus the page margin lands just inside the fold. */
+  box-sizing: border-box;
+  min-height: 128mm;
+  border: .5pt solid #999;
+  border-radius: 1.5mm;
+  padding: 4mm 5mm;
+}
+#print-sheet .ph {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 1.2mm;
+}
+#print-sheet .ph .num {
+  font-weight: 700; font-size: 11pt; white-space: nowrap;
+  border: .5pt solid #333; border-radius: 1.2mm; padding: .3mm 2mm;
+}
+/* One rule separates the header block from the data below it. */
+#print-sheet .subject {
+  font-size: 10.5pt; font-weight: 700;
+  border-bottom: .4pt solid #888; padding-bottom: 1.3mm; margin-bottom: 1.8mm;
+}
+
+/* Client on the left, device and state on the right, hairline between. */
+#print-sheet .cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm;
+  margin-bottom: 1.4mm;
+}
+#print-sheet .cols > div + div { border-left: .3pt solid #e0e0e0; padding-left: 6mm; }
+#print-sheet .cap {
+  font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .9pt;
+  color: #555; border-bottom: .3pt solid #e0e0e0;
+  padding-bottom: .5mm; margin-bottom: 1mm;
+}
+/* Status and priority get outlined pills -- the screen badges are filled,
+   which would be a solid block of toner here. */
+#print-sheet .pill {
+  display: inline-block; border: .3pt solid #777; border-radius: 4pt;
+  padding: 0 1.4mm; font-weight: 600;
+}
+#print-sheet .kv { margin: 0 0 .5mm; }
+#print-sheet .kv.long { display: flex; gap: 1.4mm; }
+#print-sheet .kv.long > span { white-space: pre-wrap; }
+/* An empty field prints as a short hairline you can write on. */
+#print-sheet .blank { display: inline-block; width: 30mm; border-bottom: .3pt dotted #999; }
+
+#print-sheet .foot {
+  display: flex; justify-content: space-between; gap: 8mm;
+  border-top: .4pt solid #888; margin-top: 1.5mm; padding-top: 1.4mm;
+}
+#print-sheet .fcol { flex: 1; }
+/* The figure the client pays, boxed so it is findable at a glance. */
+#print-sheet .totalbox {
+  display: inline-block; border: .5pt solid #333; border-radius: 1.2mm;
+  padding: .9mm 2.4mm; margin-top: 1mm;
+}
+#print-sheet .amount { font-weight: 700; font-size: 10.5pt; }
+#print-sheet .sign { margin-top: 3.5mm; }
+#print-sheet .sign .line {
+  display: inline-block; width: 30mm; border-bottom: .3pt solid #777; margin-right: 5mm;
+}
+
+#print-sheet .pat { border: .3pt solid #ddd; border-radius: 1.5mm; padding: 1.6mm 2.2mm; }
+#print-sheet .patlabel {
+  font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .9pt;
+  color: #555; text-align: center; margin-bottom: 1mm;
+}
+/* The 3x3 unlock-pattern grid, blank so it can be drawn in by hand. Bare
+   dots with no box around them, outlined rather than filled -- barely any
+   ink. 10mm apart, close to a real phone's spacing, so the drawn pattern
+   is easy to read back. */
+#print-sheet .dots {
+  display: grid;
+  grid-template-columns: repeat(3, 10mm);
+  grid-auto-rows: 10mm;
+  width: max-content;
+}
+#print-sheet .dots span {
+  width: 2.6mm; height: 2.6mm;
+  border: .25mm solid #333; border-radius: 50%;
+  align-self: center; justify-self: center;
+}
+
+@media print {
+  /* Only the sheet reaches the paper. */
+  body > *:not(#print-sheet) { display: none !important; }
+  #print-sheet { display: block; }
+  body { background: #fff; }
+  @page { margin: 14mm; }
+}
+
+#toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: #1d2433; color: #fff; padding: 11px 20px; border-radius: 8px;
+  font-size: 14px; box-shadow: var(--shadow); z-index: 100;
+}
+#toast[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>IT <span>Ticket System</span></h1>
+  <nav>
+    <button data-view="tickets" class="active">Tickets</button>
+    <button data-view="clients">Clients</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ================= TICKETS ================= -->
+  <section id="view-tickets" class="view">
+    <div class="grid">
+      <!-- New ticket form -->
+      <form class="card" id="ticket-form" autocomplete="off">
+        <h2>New Ticket</h2>
+        <div class="card-body">
+          <div class="errors" id="ticket-form-errors" hidden></div>
+
+          <div class="field">
+            <label>Title <span class="req">*</span></label>
+            <input name="title" required maxlength="200" placeholder="Laptop won't boot">
+          </div>
+
+          <div class="field">
+            <label>Client <span class="req">*</span></label>
+            <div class="picker">
+              <!-- Native datalist gives a searchable dropdown with zero JS libraries -->
+              <input id="client-search" list="client-options" required
+                     placeholder="Type a name to search...">
+              <!-- Add a client without leaving the ticket form -->
+              <button type="button" class="btn ghost" id="new-client-btn"
+                      title="Add a new client">+ New</button>
+            </div>
+            <datalist id="client-options"></datalist>
+            <input type="hidden" name="client_id" id="client-id">
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>Priority</label>
+              <select name="priority">
+                <option selected>Low</option><option>Medium</option>
+                <option>High</option><option>Critical</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Status</label>
+              <select name="status">
+                <option selected>Open</option><option>In Progress</option>
+                <option>Resolved</option><option>Closed</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field"><label>Brand</label><input name="brand" placeholder="Dell"></div>
+            <div class="field"><label>Model</label><input name="model" placeholder="XPS 15"></div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label title="Total charged for the repair">Repair total</label>
+              <input name="price" type="number" step="0.01" min="0" placeholder="0.00">
+            </div>
+            <div class="field">
+              <label>Device password</label>
+              <input name="password" placeholder="left by client">
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Description</label>
+            <textarea name="description" placeholder="What's wrong?"></textarea>
+          </div>
+
+          <div class="field">
+            <label>Steps to reproduce</label>
+            <textarea name="steps_to_reproduce" placeholder="1. ..."></textarea>
+          </div>
+
+          <!-- Advisory only: never blocks submitting, never auto-fills anything. -->
+          <div class="suggest" id="suggest-panel" hidden>
+            <div class="suggest-head">
+              <span>Suggested fixes</span>
+              <span class="src" id="suggest-source"></span>
+              <span class="spinner" id="suggest-status"></span>
+            </div>
+            <div id="suggest-body"></div>
+          </div>
+
+          <button class="btn" type="submit">Create Ticket</button>
+        </div>
+      </form>
+
+      <!-- Ticket list -->
+      <div class="card">
+        <h2>Tickets</h2>
+        <div class="toolbar">
+          <input id="ticket-search" placeholder="Search title, device, client...">
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option>Open</option><option>In Progress</option>
+            <option>Resolved</option><option>Closed</option>
+          </select>
+          <select id="filter-priority">
+            <option value="">All priorities</option>
+            <option>Low</option><option>Medium</option>
+            <option>High</option><option>Critical</option>
+          </select>
+          <select id="sort-by" title="Sort order">
+            <option value="smart">Sort: active first, by priority</option>
+            <option value="priority">Sort: priority only</option>
+            <option value="status">Sort: status</option>
+            <option value="newest">Sort: newest first</option>
+            <option value="oldest">Sort: oldest first</option>
+          </select>
+          <span class="spacer count" id="ticket-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="id">#</th>
+                <th class="sortable" data-sort="title">Title</th>
+                <th class="sortable" data-sort="client_name">Client</th>
+                <th class="sortable" data-sort="priority">Priority</th>
+                <th class="sortable" data-sort="status">Status</th>
+                <th class="sortable" data-sort="created_at">Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="ticket-rows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="ticket-empty" hidden>No tickets match these filters.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CLIENTS ================= -->
+  <section id="view-clients" class="view" hidden>
+    <div class="grid">
+      <form class="card" id="client-form" autocomplete="off">
+        <h2>New Client</h2>
+        <div class="card-body">
+          <div class="errors" id="client-form-errors" hidden></div>
+          <div class="row">
+            <div class="field">
+              <label>First name <span class="req">*</span></label>
+              <input name="first_name" required maxlength="80">
+            </div>
+            <div class="field">
+              <label>Last name <span class="req">*</span></label>
+              <input name="last_name" required maxlength="80">
+            </div>
+          </div>
+          <div class="field">
+            <label>Phone 1 <span class="req">*</span></label>
+            <input name="phone_1" type="tel" required placeholder="555-0100">
+          </div>
+          <div class="field"><label>Phone 2</label><input name="phone_2" type="tel"></div>
+          <div class="field"><label>Email</label><input name="email" type="email"></div>
+          <button class="btn" type="submit">Add Client</button>
+        </div>
+      </form>
+
+      <div class="card">
+        <h2>Clients</h2>
+        <div class="toolbar">
+          <input id="client-filter" placeholder="Search name, phone or email...">
+          <span class="spacer count" id="client-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="last_name">Name</th>
+                <th class="sortable" data-sort="phone_1">Phone</th>
+                <th class="sortable" data-sort="email">Email</th>
+                <th class="sortable" data-sort="ticket_count">Tickets</th>
+                <th class="sortable" data-sort="created_at">Added</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="client-rows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="client-empty" hidden>No clients yet - add one on the left.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= QUICK "ADD CLIENT" MODAL =================
+     Opened from the New Ticket form so a walk-in client can be created
+     without leaving the ticket you are in the middle of writing. -->
+<div class="modal-backdrop" id="client-modal" hidden>
+  <form class="modal narrow" id="quick-client-form" autocomplete="off">
+    <div class="modal-head">
+      <h2>New Client</h2>
+      <button type="button" class="close" data-close>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="errors" id="quick-client-errors" hidden></div>
+      <div class="row">
+        <div class="field">
+          <label>First name <span class="req">*</span></label>
+          <input name="first_name" required maxlength="80">
+        </div>
+        <div class="field">
+          <label>Last name <span class="req">*</span></label>
+          <input name="last_name" required maxlength="80">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Phone 1 <span class="req">*</span></label>
+          <input name="phone_1" type="tel" required placeholder="555-0100">
+        </div>
+        <div class="field"><label>Phone 2</label><input name="phone_2" type="tel"></div>
+      </div>
+      <div class="field"><label>Email</label><input name="email" type="email"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn">Add &amp; Select</button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= EDIT CLIENT MODAL ================= -->
+<div class="modal-backdrop" id="client-edit-modal" hidden>
+  <form class="modal narrow" id="client-edit-form" autocomplete="off">
+    <div class="modal-head">
+      <h2 id="client-edit-title">Client</h2>
+      <button type="button" class="close" data-close>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="errors" id="client-edit-errors" hidden></div>
+      <div class="row">
+        <div class="field">
+          <label>First name <span class="req">*</span></label>
+          <input name="first_name" required maxlength="80">
+        </div>
+        <div class="field">
+          <label>Last name <span class="req">*</span></label>
+          <input name="last_name" required maxlength="80">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Phone 1 <span class="req">*</span></label>
+          <input name="phone_1" type="tel" required>
+        </div>
+        <div class="field"><label>Phone 2</label><input name="phone_2" type="tel"></div>
+      </div>
+      <div class="field"><label>Email</label><input name="email" type="email"></div>
+      <div class="meta" id="client-edit-meta"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn">Save Changes</button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= RESOLVE TICKET MODAL =================
+     Resolving must capture what actually fixed it -- that text is what future
+     suggestions are built from, so it is required, not optional. -->
+<div class="modal-backdrop" id="resolve-modal" hidden>
+  <form class="modal narrow" id="resolve-form" autocomplete="off">
+    <div class="modal-head">
+      <h2 id="resolve-title">Resolve ticket</h2>
+      <button type="button" class="close" data-close>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="errors" id="resolve-errors" hidden></div>
+      <div class="field">
+        <label>What fixed it? <span class="req">*</span></label>
+        <input name="solutionSummary" required maxlength="500"
+               placeholder="e.g. Reseated RAM">
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select name="solutionCategory" id="resolve-category">
+          <option value="">(none)</option>
+        </select>
+      </div>
+      <div class="meta">
+        Recorded on the ticket and used to suggest fixes for similar tickets later.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn">Resolve Ticket</button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= TICKET DETAIL MODAL ================= -->
+<div class="modal-backdrop" id="modal" hidden>
+  <form class="modal" id="detail-form">
+    <div class="modal-head">
+      <h2 id="detail-title">Ticket</h2>
+      <button type="button" class="close" data-close>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="errors" id="detail-errors" hidden></div>
+
+      <div class="field">
+        <label>Title <span class="req">*</span></label>
+        <input name="title" required>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Status</label>
+          <select name="status">
+            <option>Open</option><option>In Progress</option>
+            <option>Resolved</option><option>Closed</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Priority</label>
+          <select name="priority">
+            <option>Low</option><option>Medium</option>
+            <option>High</option><option>Critical</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label>Brand</label><input name="brand"></div>
+        <div class="field"><label>Model</label><input name="model"></div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label title="Total charged for the repair">Repair total</label>
+          <input name="price" type="number" step="0.01" min="0">
+        </div>
+        <div class="field"><label>Device password</label><input name="password"></div>
+      </div>
+
+      <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+
+      <!-- Sits directly under the description, usable from creation through
+           resolution -- it is meant to be filled in as the repair happens. -->
+      <div class="field">
+        <label>Diagnostic steps</label>
+        <div class="steps-box">
+          <ul class="steps-list" id="steps-list"></ul>
+          <div class="steps-empty" id="steps-empty">
+            No steps logged yet. Record what you tried as you go.
+          </div>
+          <div class="step-add">
+            <input id="step-input" maxlength="2000"
+                   placeholder="e.g. Reseated RAM, still no POST">
+            <button type="button" class="btn ghost" id="step-add-btn">Add Step</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Steps to reproduce</label>
+        <textarea name="steps_to_reproduce"></textarea>
+      </div>
+
+      <div class="field" id="detail-solution-field" hidden>
+        <label>Solution recorded</label>
+        <input name="solution_summary" readonly>
+      </div>
+
+      <div class="meta" id="detail-meta"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" id="detail-resolve"
+              style="margin-right:auto">Resolve…</button>
+      <button type="button" class="btn ghost" id="detail-reopen"
+              style="margin-right:auto" hidden>Reopen</button>
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn">Save Changes</button>
+    </div>
+  </form>
+</div>
+
+<!-- Filled in by printTicket() just before the print dialog opens. -->
+<div id="print-sheet"></div>
+
+<div id="toast" hidden></div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+ * Small helpers
+ * ====================================================================== */
+const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+/** Phone numbers compare with separators stripped -- mirrors server.js. */
+const phoneKey = (v) => String(v ?? '').replace(/[\s\-().+]/g, '');
+
+/** Escape user data before injecting into innerHTML. */
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** "2026-07-21 14:03:00" (UTC from SQLite) -> local short date. */
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+  return isNaN(d) ? s : d.toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function fmtDateTime(s) {
+  if (!s) return '';
+  const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+  // Seconds add noise on a printed work order; medium/short reads cleanly.
+  return isNaN(d) ? s : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** badge('s', 'In Progress') -> <span class="badge s-in-progress">In Progress</span> */
+const badge = (type, value) =>
+  `<span class="badge ${type}-${String(value).toLowerCase().replace(/\s+/g, '-')}">${esc(value)}</span>`;
+
+let toastTimer;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+}
+
+function showErrors(box, list) {
+  if (!list || !list.length) { box.hidden = true; return; }
+  box.innerHTML = '<ul>' + list.map((e) => `<li>${esc(e)}</li>`).join('') + '</ul>';
+  box.hidden = false;
+}
+
+/** fetch wrapper: throws an Error carrying the server's validation messages. */
+async function api(url, options = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error('Request failed');
+    err.list = (data && data.errors) || ['Something went wrong.'];
+    throw err;
+  }
+  return data;
+}
+
+/** Read a <form> into a plain object (empty strings become null). */
+function formValues(form) {
+  const out = {};
+  for (const [k, v] of new FormData(form)) {
+    const s = typeof v === 'string' ? v.trim() : v;
+    out[k] = s === '' ? null : s;
+  }
+  return out;
+}
+
+/* =========================================================================
+ * State
+ * ====================================================================== */
+const state = {
+  clients: [],
+  tickets: [],
+  clientSort: { key: 'last_name', dir: 1 },
+  ticketSort: { key: null, dir: 1 },   // null = keep the order chosen in #sort-by
+};
+
+// The order used when sorting by these columns is logical, not alphabetical.
+const PRIORITY_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+const STATUS_RANK = { Open: 0, 'In Progress': 1, Resolved: 2, Closed: 3 };
+
+function sortRows(rows, { key, dir }) {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    let x = a[key], y = b[key];
+    if (key === 'priority') { x = PRIORITY_RANK[x]; y = PRIORITY_RANK[y]; }
+    else if (key === 'status') { x = STATUS_RANK[x]; y = STATUS_RANK[y]; }
+    if (x === null || x === undefined) return 1;   // blanks always last
+    if (y === null || y === undefined) return -1;
+    if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir;
+    return String(x).localeCompare(String(y), undefined, { sensitivity: 'base' }) * dir;
+  });
+}
+
+/** Drop a table's column-header sort and its arrow indicator. */
+function clearColumnSort(scope, sortState) {
+  sortState.key = null;
+  $$('th.sortable .arrow', scope).forEach((a) => a.remove());
+}
+
+/** Wire click-to-sort on a table's <th class="sortable"> cells. */
+function bindSorting(scope, sortState, rerender) {
+  $$('th.sortable', scope).forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (sortState.key === key) sortState.dir *= -1;
+      else { sortState.key = key; sortState.dir = 1; }
+      $$('th.sortable .arrow', scope).forEach((a) => a.remove());
+      th.insertAdjacentHTML('beforeend',
+        ` <span class="arrow">${sortState.dir === 1 ? '▲' : '▼'}</span>`);
+      rerender();
+    });
+  });
+}
+
+/* =========================================================================
+ * Navigation
+ * ====================================================================== */
+$$('nav button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    $$('nav button').forEach((b) => b.classList.toggle('active', b === btn));
+    $$('.view').forEach((v) => { v.hidden = v.id !== `view-${btn.dataset.view}`; });
+  });
+});
+
+/* =========================================================================
+ * Clients
+ * ====================================================================== */
+async function loadClients() {
+  state.clients = await api('/api/clients');
+  renderClients();
+  renderClientOptions();
+}
+
+function renderClients() {
+  const q = $('#client-filter').value.trim().toLowerCase();
+  let rows = state.clients;
+  if (q) {
+    rows = rows.filter((c) =>
+      [`${c.first_name} ${c.last_name}`, c.phone_1, c.phone_2, c.email]
+        .some((f) => (f || '').toLowerCase().includes(q)));
+  }
+  rows = sortRows(rows, state.clientSort);
+
+  $('#client-count').textContent =
+    `${rows.length} of ${state.clients.length} client${state.clients.length === 1 ? '' : 's'}`;
+  $('#client-empty').hidden = rows.length > 0;
+
+  $('#client-rows').innerHTML = rows.map((c) => `
+    <tr class="clickable" data-id="${c.id}">
+      <td><strong>${esc(c.last_name)}, ${esc(c.first_name)}</strong></td>
+      <td class="nowrap">${esc(c.phone_1 || '')}${c.phone_2 ? ' / ' + esc(c.phone_2) : ''}</td>
+      <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}</td>
+      <td>${c.ticket_count}</td>
+      <td class="nowrap">${fmtDate(c.created_at)}</td>
+      <td class="row-actions">
+        <button type="button" class="mini" data-edit="${c.id}">Edit</button>
+      </td>
+    </tr>`).join('');
+}
+
+/** Fill the searchable client datalist used by the new-ticket form. */
+function renderClientOptions() {
+  $('#client-options').innerHTML = state.clients
+    .map((c) => `<option value="${esc(`${c.first_name} ${c.last_name} (#${c.id})`)}"></option>`)
+    .join('');
+}
+
+$('#client-filter').addEventListener('input', renderClients);
+
+/**
+ * Validate and save a client form. Shared by the Clients tab, the quick-add
+ * modal on the ticket form, and the edit modal.
+ * @param {number|null} id  pass a client id to update it, null to create one.
+ * @returns the saved client, or null if it was rejected.
+ */
+async function submitClientForm(form, box, id = null) {
+  // Frontend validation first - mirrors the checks the backend enforces.
+  const v = formValues(form);
+  const errors = [];
+  if (!v.first_name) errors.push('First name is required.');
+  if (!v.last_name) errors.push('Last name is required.');
+  if (!v.phone_1) errors.push('Phone 1 is required.');
+  else if (!/\d/.test(v.phone_1)) errors.push('Phone 1 must contain at least one digit.');
+  else {
+    // Catch the duplicate before a round trip; the server checks again anyway.
+    // A client editing its own record must not clash with itself.
+    const owner = state.clients.find(
+      (c) => c.id !== id && phoneKey(c.phone_1) === phoneKey(v.phone_1));
+    if (owner) {
+      errors.push(`Phone ${v.phone_1} already belongs to ` +
+        `${owner.first_name} ${owner.last_name} (client #${owner.id}).`);
+    }
+  }
+  $$('input[required]', form).forEach((i) => i.classList.toggle('invalid', !i.value.trim()));
+  if (errors.length) { showErrors(box, errors); return null; }
+
+  try {
+    const client = id
+      ? await api('/api/clients/' + id, { method: 'PATCH', body: JSON.stringify(v) })
+      : await api('/api/clients', { method: 'POST', body: JSON.stringify(v) });
+    if (!id) form.reset();          // an edit form should keep showing its values
+    showErrors(box, null);
+    await loadClients();
+    return client;
+  } catch (err) {
+    showErrors(box, err.list);
+    return null;
+  }
+}
+
+$('#client-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (await submitClientForm(e.target, $('#client-form-errors'))) toast('Client added.');
+});
+
+/* ----- editing an existing client ----- */
+let editingClientId = null;
+
+function openClient(id) {
+  const c = state.clients.find((x) => x.id === id);
+  if (!c) return;
+  editingClientId = id;
+
+  const form = $('#client-edit-form');
+  for (const field of ['first_name', 'last_name', 'phone_1', 'phone_2', 'email']) {
+    form.elements[field].value = c[field] ?? '';
+  }
+  $('#client-edit-title').textContent = `${c.first_name} ${c.last_name}`;
+  $('#client-edit-meta').textContent =
+    `Client #${c.id} · ${c.ticket_count} ticket${c.ticket_count === 1 ? '' : 's'}` +
+    ` · added ${fmtDate(c.created_at)}`;
+
+  showErrors($('#client-edit-errors'), null);
+  $$('.invalid', form).forEach((i) => i.classList.remove('invalid'));
+  $('#client-edit-modal').hidden = false;
+  form.elements.first_name.focus();
+}
+
+$('#client-rows').addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;          // let mailto: links work
+  const tr = e.target.closest('tr[data-id]');
+  if (tr) openClient(Number(tr.dataset.id));
+});
+
+$('#client-edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const client = await submitClientForm(e.target, $('#client-edit-errors'), editingClientId);
+  if (!client) return;
+  $('#client-edit-modal').hidden = true;
+  await loadTickets();      // ticket rows carry the client's name, so refresh them
+  toast('Client updated.');
+});
+
+/* =========================================================================
+ * Tickets
+ * ====================================================================== */
+let searchDebounce;
+
+async function loadTickets() {
+  const params = new URLSearchParams();
+  const status = $('#filter-status').value;
+  const priority = $('#filter-priority').value;
+  const q = $('#ticket-search').value.trim();
+  if (status) params.set('status', status);
+  if (priority) params.set('priority', priority);
+  if (q) params.set('q', q);
+  params.set('sort', $('#sort-by').value);
+
+  state.tickets = await api('/api/tickets?' + params);
+  renderTickets();
+}
+
+function renderTickets() {
+  const rows = sortRows(state.tickets, state.ticketSort);
+  $('#ticket-count').textContent = `${rows.length} ticket${rows.length === 1 ? '' : 's'}`;
+  $('#ticket-empty').hidden = rows.length > 0;
+
+  $('#ticket-rows').innerHTML = rows.map((t) => `
+    <tr class="clickable" data-id="${t.id}">
+      <td>${t.id}</td>
+      <td><strong>${esc(t.title)}</strong>${
+        t.brand || t.model
+          ? `<br><span class="count">${esc([t.brand, t.model].filter(Boolean).join(' '))}</span>`
+          : ''}</td>
+      <td class="nowrap">${esc(t.client_name)}</td>
+      <td>${badge('p', t.priority)}</td>
+      <td>${badge('s', t.status)}</td>
+      <td class="nowrap">${fmtDate(t.created_at)}</td>
+      <td class="row-actions">
+        <button type="button" class="mini act-progress" data-id="${t.id}"
+                data-status="In Progress" ${t.status === 'In Progress' ? 'disabled' : ''}
+                title="Mark as in progress">In Progress</button>
+        ${t.status === 'Resolved'
+          ? `<button type="button" class="mini act-resolve" data-reopen="${t.id}"
+                     title="Reopen this ticket">Reopen</button>`
+          // Resolving always goes through the dialog -- the fix has to be
+          // recorded before a ticket can close, from here as well as inside it.
+          : `<button type="button" class="mini act-resolve" data-resolve="${t.id}"
+                     title="Record the fix and resolve">Resolve…</button>`}
+        <button type="button" class="mini" data-print="${t.id}"
+                title="Print this ticket">Print</button>
+      </td>
+    </tr>`).join('');
+}
+
+// Filters and the sort order hit the backend; the search box is debounced so
+// we don't spam it.
+$('#filter-status').addEventListener('change', loadTickets);
+$('#filter-priority').addEventListener('change', loadTickets);
+$('#sort-by').addEventListener('change', () => {
+  // Drop any column-header sort, otherwise it would silently override the
+  // ordering the user just picked from the dropdown.
+  clearColumnSort($('#view-tickets'), state.ticketSort);
+  loadTickets();
+});
+$('#ticket-search').addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(loadTickets, 250);
+});
+
+/**
+ * The client picker is a datalist, so the user may type anything. Resolve the
+ * typed text back to a real client id: first by the "(#id)" suffix the options
+ * carry, then by a unique case-insensitive full-name match.
+ */
+function resolveClientId(text) {
+  const raw = text.trim();
+  if (!raw) return null;
+  const byId = raw.match(/#(\d+)\)?\s*$/);
+  if (byId) {
+    const id = Number(byId[1]);
+    return state.clients.some((c) => c.id === id) ? id : null;
+  }
+  const matches = state.clients.filter(
+    (c) => `${c.first_name} ${c.last_name}`.toLowerCase() === raw.toLowerCase());
+  return matches.length === 1 ? matches[0].id : null;
+}
+
+$('#client-search').addEventListener('input', (e) => {
+  const id = resolveClientId(e.target.value);
+  $('#client-id').value = id ?? '';
+  e.target.classList.toggle('invalid', e.target.value.trim() !== '' && id === null);
+});
+
+/** Put a client into the ticket form's picker in the exact format it expects. */
+function selectClient(c) {
+  $('#client-search').value = `${c.first_name} ${c.last_name} (#${c.id})`;
+  $('#client-search').classList.remove('invalid');
+  $('#client-id').value = c.id;
+}
+
+// "+ New" next to the picker: create a client inline and select it.
+$('#new-client-btn').addEventListener('click', () => {
+  const form = $('#quick-client-form');
+  form.reset();
+  showErrors($('#quick-client-errors'), null);
+  $$('.invalid', form).forEach((i) => i.classList.remove('invalid'));
+
+  // If the user already typed a name that matched nobody, carry it over so
+  // they don't have to type it twice.
+  const typed = $('#client-search').value.trim();
+  if (typed && resolveClientId(typed) === null) {
+    const parts = typed.split(/\s+/);
+    form.elements.first_name.value = parts[0];
+    form.elements.last_name.value = parts.slice(1).join(' ');
+  }
+
+  $('#client-modal').hidden = false;
+  form.elements.first_name.focus();
+});
+
+$('#quick-client-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const client = await submitClientForm(e.target, $('#quick-client-errors'));
+  if (!client) return;                       // errors are already on screen
+  selectClient(client);                      // loadClients() refreshed the datalist
+  $('#client-modal').hidden = true;
+  toast(`${client.first_name} ${client.last_name} added and selected.`);
+});
+
+$('#ticket-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const box = $('#ticket-form-errors');
+  const v = formValues(form);
+
+  const errors = [];
+  if (!v.title) errors.push('Title is required.');
+  const clientId = resolveClientId($('#client-search').value);
+  if (!clientId) errors.push('Select an existing client from the list.');
+  if (v.price !== null && (isNaN(Number(v.price)) || Number(v.price) < 0)) {
+    errors.push('Price must be a positive number.');
+  }
+  $('#client-search').classList.toggle('invalid', !clientId);
+  form.elements.title.classList.toggle('invalid', !v.title);
+  if (errors.length) return showErrors(box, errors);
+
+  v.client_id = clientId;
+  try {
+    await api('/api/tickets', { method: 'POST', body: JSON.stringify(v) });
+    form.reset();
+    $('#client-search').value = '';
+    $('#client-id').value = '';
+    $$('.invalid', form).forEach((i) => i.classList.remove('invalid'));
+    showErrors(box, null);
+    await Promise.all([loadTickets(), loadClients()]);  // refresh ticket counts too
+    toast('Ticket created.');
+  } catch (err) {
+    showErrors(box, err.list);
+  }
+});
+
+/* =========================================================================
+ * Ticket detail modal
+ * ====================================================================== */
+let editingId = null;
+let currentTicket = null;      // the ticket the detail modal is showing
+
+/** Flip a ticket's status straight from the list. */
+async function setTicketStatus(id, status) {
+  try {
+    await api('/api/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
+    await loadTickets();          // re-sorts, so resolved tickets sink away
+    toast(`Ticket #${id} is now ${status}.`);
+  } catch (err) {
+    toast(err.list[0]);
+  }
+}
+
+$('#ticket-rows').addEventListener('click', (e) => {
+  // Row actions act on their own -- none of them should also open the ticket.
+  const resolveBtn = e.target.closest('[data-resolve]');
+  if (resolveBtn) {
+    e.stopPropagation();
+    return openResolveModal(Number(resolveBtn.dataset.resolve));
+  }
+  const reopenBtn = e.target.closest('[data-reopen]');
+  if (reopenBtn) {
+    e.stopPropagation();
+    return reopenTicket(Number(reopenBtn.dataset.reopen));
+  }
+  const statusBtn = e.target.closest('[data-status]');
+  if (statusBtn) {
+    e.stopPropagation();
+    return setTicketStatus(Number(statusBtn.dataset.id), statusBtn.dataset.status);
+  }
+  const printBtn = e.target.closest('[data-print]');
+  if (printBtn) {
+    e.stopPropagation();
+    return printTicket(Number(printBtn.dataset.print));
+  }
+  const tr = e.target.closest('tr[data-id]');
+  if (tr) openTicket(Number(tr.dataset.id));
+});
+
+async function openTicket(id) {
+  let t;
+  try {
+    t = await api('/api/tickets/' + id);
+  } catch (err) {
+    return toast(err.list[0]);
+  }
+
+  editingId = id;
+  const form = $('#detail-form');
+  $('#detail-title').innerHTML =
+    `Ticket #${t.id} &nbsp;${badge('p', t.priority)} ${badge('s', t.status)}`;
+
+  // NOTE: use form.elements[name], not form[name] -- a form's own `title`
+  // property would shadow the <input name="title"> field.
+  for (const field of ['title', 'status', 'priority', 'brand', 'model',
+                       'price', 'password', 'description', 'steps_to_reproduce']) {
+    form.elements[field].value = t[field] ?? '';
+  }
+
+  const contact = [t.client_email, t.client_phone_1, t.client_phone_2]
+    .filter(Boolean).map(esc).join(' &middot; ');
+  $('#detail-meta').innerHTML =
+    `<strong>${esc(t.client_name)}</strong>${contact ? ' &middot; ' + contact : ''}` +
+    `<br>Created ${fmtDateTime(t.created_at)} &middot; Last updated ${fmtDateTime(t.updated_at)}`;
+
+  applyTicketToDetail(t);          // status badges, solution, Resolve/Reopen buttons
+  $('#step-input').value = '';
+  $('#step-input').classList.remove('invalid');
+  loadSteps(id);
+
+  showErrors($('#detail-errors'), null);
+  $('#modal').hidden = false;
+  form.elements.title.focus();
+}
+
+/* Closing works the same for every modal: the [data-close] buttons, a click on
+   the backdrop itself, or Escape (which closes the topmost open one). */
+function hideModal(backdrop) {
+  backdrop.hidden = true;
+  if (backdrop.id === 'modal') { editingId = null; currentTicket = null; }
+  if (backdrop.id === 'client-edit-modal') editingClientId = null;
+}
+const closeModal = () => hideModal($('#modal'));
+
+$$('.modal-backdrop').forEach((backdrop) => {
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) hideModal(backdrop);
+  });
+  $$('[data-close]', backdrop).forEach((btn) =>
+    btn.addEventListener('click', () => hideModal(backdrop)));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = $$('.modal-backdrop').filter((m) => !m.hidden).pop();
+  if (open) hideModal(open);
+});
+
+/* =========================================================================
+ * Suggested fixes (ticket creation)
+ *
+ * Advisory only: it never blocks submitting and never writes into the form.
+ * Fires 600ms after typing stops, and only once there is enough to match on.
+ * ====================================================================== */
+let suggestTimer;
+let suggestSeq = 0;                 // guards against out-of-order responses
+
+function suggestInputs() {
+  const form = $('#ticket-form');
+  return {
+    title: form.elements.title.value.trim(),
+    description: form.elements.description.value.trim(),
+    deviceModel: [form.elements.brand.value, form.elements.model.value]
+      .filter(Boolean).join(' ').trim(),
+  };
+}
+
+function scheduleSuggest() {
+  clearTimeout(suggestTimer);
+  const { title, description } = suggestInputs();
+  if (`${title} ${description}`.trim().length < 12) {
+    $('#suggest-panel').hidden = true;
+    return;
+  }
+  suggestTimer = setTimeout(runSuggest, 600);
+}
+
+async function runSuggest() {
+  const payload = suggestInputs();
+  const seq = ++suggestSeq;
+
+  $('#suggest-panel').hidden = false;
+  $('#suggest-status').textContent = 'looking…';
+
+  let data;
+  try {
+    data = await api('/api/tickets/suggest', { method: 'POST', body: JSON.stringify(payload) });
+  } catch {
+    if (seq === suggestSeq) $('#suggest-status').textContent = 'unavailable';
+    return;
+  }
+  if (seq !== suggestSeq) return;                 // a newer request already won
+  $('#suggest-status').textContent = '';
+  renderSuggest(data);
+}
+
+function renderSuggest(d) {
+  const label = {
+    history: `based on ${d.matchedTickets} similar past ticket${d.matchedTickets === 1 ? '' : 's'}`,
+    general: 'general suggestion — no matching history yet',
+    none: 'no matching history yet',
+  }[d.source] || '';
+  const badge = $('#suggest-source');
+  badge.className = `src src-${d.source}`;
+  badge.textContent = label;
+
+  const parts = [];
+  if (d.topSuggestions.length) {
+    parts.push('<ul>' + d.topSuggestions.map((s) => `
+      <li>
+        <span class="fix">${esc(s.fix)}</span>
+        ${s.matchCount > 0 ? `<span class="count">${s.matchCount}&times; before</span>` : ''}
+        <span class="conf conf-${esc(s.confidence)}">${esc(s.confidence)}</span>
+      </li>`).join('') + '</ul>');
+  }
+  for (const w of d.warnings || []) parts.push(`<div class="warn">${esc(w)}</div>`);
+  if (d.generalNotes) parts.push(`<div class="notes">${esc(d.generalNotes)}</div>`);
+  if (d.aiError) parts.push(`<div class="warn">${esc(d.aiError)}</div>`);
+  if (!parts.length) parts.push('<div class="notes">No suggestions for this yet.</div>');
+
+  $('#suggest-body').innerHTML = parts.join('');
+}
+
+for (const field of ['title', 'description', 'brand', 'model']) {
+  $('#ticket-form').elements[field].addEventListener('input', scheduleSuggest);
+}
+
+/* =========================================================================
+ * Diagnostic steps log
+ * ====================================================================== */
+async function loadSteps(ticketId) {
+  const list = $('#steps-list');
+  list.innerHTML = '';
+  let steps = [];
+  try {
+    steps = await api(`/api/tickets/${ticketId}/steps`);
+  } catch (err) {
+    toast(err.list[0]);
+    return;
+  }
+  $('#steps-empty').hidden = steps.length > 0;
+  list.innerHTML = steps.map((s) => `
+    <li>
+      <span class="when">${fmtDateTime(s.created_at)}</span>
+      <span class="what">${esc(s.step_text)}</span>
+    </li>`).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+async function addStep() {
+  const input = $('#step-input');
+  const stepText = input.value.trim();
+  if (!stepText) { input.classList.add('invalid'); return; }
+  input.classList.remove('invalid');
+
+  try {
+    await api(`/api/tickets/${editingId}/steps`, {
+      method: 'POST', body: JSON.stringify({ stepText }),
+    });
+    input.value = '';
+    await loadSteps(editingId);
+  } catch (err) {
+    toast(err.list[0]);
+  }
+}
+
+$('#step-add-btn').addEventListener('click', addStep);
+$('#step-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); addStep(); }   // don't submit the ticket form
+});
+
+/* =========================================================================
+ * Resolve / reopen
+ * ====================================================================== */
+async function fillSolutionCategories(selected) {
+  const select = $('#resolve-category');
+  let categories = [];
+  try { categories = await api('/api/solution-categories'); } catch { /* keep the blank option */ }
+  select.innerHTML = '<option value="">(none)</option>' +
+    categories.map((c) => `<option${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
+}
+
+/** The ticket being resolved -- may be opened from a row or from inside a ticket. */
+let resolvingId = null;
+
+async function openResolveModal(id) {
+  let ticket;
+  try {
+    ticket = await api('/api/tickets/' + id);
+  } catch (err) {
+    return toast(err.list[0]);
+  }
+  resolvingId = id;
+
+  const form = $('#resolve-form');
+  form.reset();
+  showErrors($('#resolve-errors'), null);
+  // Pre-fill from any previously recorded solution (resolved before, then
+  // reopened) so the tech edits rather than retypes.
+  form.elements.solutionSummary.value = ticket.solution_summary || '';
+  $('#resolve-title').textContent = `Resolve ticket #${id}`;
+  await fillSolutionCategories(ticket.solution_category);
+
+  $('#resolve-modal').hidden = false;
+  form.elements.solutionSummary.focus();
+}
+
+async function reopenTicket(id) {
+  if (!confirm('Reopen this ticket? The recorded solution is kept.')) return;
+  try {
+    const ticket = await api(`/api/tickets/${id}/reopen`, { method: 'PATCH' });
+    if (editingId === id) applyTicketToDetail(ticket);
+    await loadTickets();
+    toast(`Ticket #${ticket.id} reopened.`);
+  } catch (err) {
+    toast(err.list[0]);
+  }
+}
+
+$('#detail-resolve').addEventListener('click', () => openResolveModal(editingId));
+$('#detail-reopen').addEventListener('click', () => reopenTicket(editingId));
+
+$('#resolve-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const v = formValues(e.target);
+  if (!v.solutionSummary) {
+    return showErrors($('#resolve-errors'), ['A solution summary is required.']);
+  }
+  try {
+    const ticket = await api(`/api/tickets/${resolvingId}/resolve`, {
+      method: 'PATCH', body: JSON.stringify(v),
+    });
+    $('#resolve-modal').hidden = true;
+    if (editingId === ticket.id) applyTicketToDetail(ticket);   // detail view is open behind it
+    await loadTickets();
+    toast(`Ticket #${ticket.id} resolved.`);
+  } catch (err) {
+    showErrors($('#resolve-errors'), err.list);
+  }
+});
+
+/** Refresh the open detail modal from a ticket the server just returned. */
+function applyTicketToDetail(t) {
+  currentTicket = t;
+  const form = $('#detail-form');
+  form.elements.status.value = t.status;
+  form.elements.solution_summary.value = t.solution_summary || '';
+  $('#detail-title').innerHTML =
+    `Ticket #${t.id} &nbsp;${badge('p', t.priority)} ${badge('s', t.status)}`;
+  $('#detail-solution-field').hidden = !t.solution_summary;
+
+  // Resolve and Reopen are mutually exclusive -- never both on screen.
+  const resolved = t.status === 'Resolved';
+  $('#detail-resolve').hidden = resolved;
+  $('#detail-reopen').hidden = !resolved;
+}
+
+/* =========================================================================
+ * Printing
+ *
+ * Builds a plain sheet into #print-sheet and hands it to the browser's print
+ * dialog. "Save as PDF" there produces the PDF, so the app needs no PDF
+ * library. The sheet always shows the ticket as saved, not unsaved edits.
+ * ====================================================================== */
+
+/** "Label: value" on one line; an empty value becomes a rule to write on. */
+const kv = (label, value) =>
+  `<div class="kv"><b>${esc(label)}:</b> ${value ? esc(value) : '<span class="blank"></span>'}</div>`;
+
+/** Same, but the value sits in an outlined pill (status, priority). */
+const kvPill = (label, value) =>
+  `<div class="kv"><b>${esc(label)}:</b> <span class="pill">${esc(value)}</span></div>`;
+
+/** Same, but for multi-line text that keeps its line breaks. */
+const kvLong = (label, value) =>
+  `<div class="kv long"><b>${esc(label)}:</b>` +
+  `<span>${value ? esc(value) : '<span class="blank"></span>'}</span></div>`;
+
+function buildPrintSheet(t) {
+  const money = t.price === null || t.price === undefined ? '' : Number(t.price).toFixed(2);
+
+  $('#print-sheet').innerHTML = `
+    <div class="ph">
+      <div><b>IT Ticket System</b> &middot; work order</div>
+      <div class="num">Ticket #${t.id}</div>
+    </div>
+
+    <div class="subject">${esc(t.title)}</div>
+
+    <div class="cols">
+      <div>
+        <div class="cap">Client</div>
+        ${kv('Name', t.client_name)}
+        ${kv('Phone 1', t.client_phone_1)}
+        ${kv('Phone 2', t.client_phone_2)}
+        ${kv('Email', t.client_email)}
+        ${kv('Opened', fmtDateTime(t.created_at))}
+      </div>
+      <div>
+        <div class="cap">Device</div>
+        ${kv('Brand', t.brand)}
+        ${kv('Model', t.model)}
+        ${kvPill('Status', t.status)}
+        ${kvPill('Priority', t.priority)}
+        ${kv('Updated', fmtDateTime(t.updated_at))}
+      </div>
+    </div>
+
+    ${kvLong('Description', t.description)}
+    ${kvLong('Steps', t.steps_to_reproduce)}
+
+    <div class="foot">
+      <div class="fcol">
+        ${kv('Password', t.password)}
+        <div class="totalbox"><b>Repair total:</b>
+          <span class="amount">${money ? esc(money) : '<span class="blank"></span>'}</span>
+        </div>
+        <div class="sign">Received by <span class="line"></span>
+          Client signature <span class="line"></span></div>
+      </div>
+      <div class="pat">
+        <div class="patlabel">Unlock pattern</div>
+        <div class="dots">${'<span></span>'.repeat(9)}</div>
+      </div>
+    </div>`;
+}
+
+/** Fetch the ticket as stored, lay it out, and open the print dialog. */
+async function printTicket(id) {
+  let t;
+  try {
+    t = await api('/api/tickets/' + id);
+  } catch (err) {
+    return toast(err.list[0]);
+  }
+  buildPrintSheet(t);
+  window.print();
+}
+
+$('#detail-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const box = $('#detail-errors');
+  const v = formValues(e.target);
+
+  if (!v.title) {
+    e.target.elements.title.classList.add('invalid');
+    return showErrors(box, ['Title is required.']);
+  }
+  e.target.elements.title.classList.remove('invalid');
+
+  try {
+    await api('/api/tickets/' + editingId, { method: 'PATCH', body: JSON.stringify(v) });
+    closeModal();
+    await loadTickets();
+    toast('Ticket updated.');
+  } catch (err) {
+    showErrors(box, err.list);
+  }
+});
+
+/* =========================================================================
+ * Boot
+ * ====================================================================== */
+bindSorting($('#view-clients'), state.clientSort, renderClients);
+bindSorting($('#view-tickets'), state.ticketSort, renderTickets);
+
+(async function init() {
+  try {
+    await loadClients();
+    await loadTickets();
+  } catch (err) {
+    toast('Could not reach the server.');
+  }
+})();
+</script>
+</body>
+</html>
